@@ -3,12 +3,14 @@ import os
 from requests import get
 import time
 import datetime
+import signal
+from contextlib import contextmanager
 
 ip_check = '' # set to prefix of WAN IP i.e = '164' (you can enter the entire IP if you have a static WAN)
 ping_host = 'ping.ui.com' # set host to ping - only used if ip_check is not provided
 
 net_check = 1 # in minutes - how often to check ip address or ping to determine if network is down
-ssh_internval = 5 # in minutes - only allow ssh session when network is down once every 5 minutes
+ssh_internval = 2 # in minutes - only allow ssh session when network is down once every 5 minutes
 
 udm_creds = {
     'hostname' : '',        # UDM IP Address (i.e 10.0.1.1)
@@ -16,6 +18,26 @@ udm_creds = {
     'password' : ''         # UDM SSH  Password
 }
 
+
+@contextmanager
+def timeout(time):
+    # Register a function to raise a TimeoutError on the signal.
+    signal.signal(signal.SIGALRM, raise_timeout)
+    # Schedule the signal to be sent after ``time``.
+    signal.alarm(time)
+
+    try:
+        yield
+    except TimeoutError:
+        pass
+    finally:
+        # Unregister the signal so it won't be triggered
+        # if the timeout is not reached.
+        signal.signal(signal.SIGALRM, signal.SIG_IGN)
+
+
+def raise_timeout(signum, frame):
+    raise TimeoutError
 
 def main_loop():
     last_ssh_time = 0
@@ -30,7 +52,8 @@ def main_loop():
             if (time.time() - last_ssh_time) >= ssh_internval*60:
                 print(str(datetime.datetime.now()) + ": ssh(ing) into UDM")
                 last_ssh_time = time.time()
-                udm_ssh()
+                with timeout(6):
+                    udm_ssh()
                 print("---------------------------------------")
                 print()
         time.sleep(net_check * 60)
